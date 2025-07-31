@@ -1,0 +1,21 @@
+{
+  "@@locale": "en",
+  "appTitle": "KPR Patterns",
+  "uploadHint": "Upload your json file\nand enter description",
+  "jsonError": "JSON file reading error",
+  "serverError": "Server error",
+  "noPatterns": "No patterns to display",
+  "newRequest": "New request",
+  "successUpload": "File uploaded successfully!",
+  "inputHint": "Select JSON and enter description",
+  "awaitedFormat": "Expected JSON array «matrices»",
+  "sendError": "Failed to send request",
+  "enterDesc": "Enter description...",
+  "emptyPattern": "Pattern not found",
+  "ifWord": "If",
+  "soWord": "then the result is",
+  "back": "Back",
+  "next": "Next",
+  "patternWord": "Pattern",
+  "fromWord": "of"
+}

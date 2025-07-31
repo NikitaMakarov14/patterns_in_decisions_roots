@@ -1,0 +1,21 @@
+{
+  "@@locale": "ru",
+  "appTitle": "Паттерны КПР",
+  "uploadHint": "Загрузите ваш json-файл\nи введите описание к нему",
+  "jsonError": "Ошибка чтения JSON-файла",
+  "serverError": "Ошибка сервера",
+  "noPatterns": "Нет паттернов для отображения",
+  "newRequest": "Новый запрос",
+  "successUpload": "Файл успешно загружен!",
+  "inputHint": "Выберите JSON и введите описание",
+  "awaitedFormat": "Ожидается JSON-массив «matrices»",
+  "sendError": "Не удалось отправить запрос",
+  "enterDesc": "Введите описание...",
+  "emptyPattern": "Паттерн не найден",
+  "ifWord": "Если",
+  "soWord": "то результат равен",
+  "back": "Назад",
+  "next": "Далее",
+  "patternWord": "Паттерн",
+  "fromWord": "из"
+}
