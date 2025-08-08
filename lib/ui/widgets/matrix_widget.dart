@@ -2,22 +2,80 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/index.dart';
 
+// Создаем sealed классы для типизации подсветки
+sealed class Highlight {}
+
+class CellHighlight implements Highlight {
+  final int row;
+  final int col;
+  
+  CellHighlight(this.row, this.col);
+}
+
+class RowHighlight implements Highlight {
+  final int row;
+  
+  RowHighlight(this.row);
+}
+
+class ColHighlight implements Highlight {
+  final int col;
+  
+  ColHighlight(this.col);
+}
+
 class MatrixWidget extends StatelessWidget {
   final MatrixList matrix;
-  final MatrixList
-      highlightedCells; // Все ячейки, которые учавствуют в отображении паттерна
+  final List<Highlight> highlights; 
 
   const MatrixWidget({
     super.key,
     required this.matrix,
-    required this.highlightedCells,
+    required this.highlights,
   });
 
-  // Функия для определения является ли ячейка частью паттерна
+  // Оптимизированная проверка подсветки
   bool _isHighlighted(int row, int col) {
-    return highlightedCells.any((coords) =>
-        (coords[0] == row && (coords[1] == -1 || coords[1] == col)) ||
-        (coords[0] == -1 && coords[1] == col));
+    final highlightedRows = highlights
+        .whereType<RowHighlight>()
+        .map((h) => h.row)
+        .toSet();
+    
+    final highlightedCols = highlights
+        .whereType<ColHighlight>()
+        .map((h) => h.col)
+        .toSet();
+    
+    final highlightedCells = highlights
+        .whereType<CellHighlight>()
+        .map((h) => '${h.row},${h.col}')
+        .toSet();
+    
+    return highlightedRows.contains(row) ||
+           highlightedCols.contains(col) ||
+           highlightedCells.contains('$row,$col');
+  }
+
+  BorderRadius _getCellBorderRadius(int rowIndex, int colIndex) {
+    final bool isFirstRow = rowIndex == 0;
+    final bool isLastRow = rowIndex == matrix.length - 1;
+    final bool isFirstCol = colIndex == 0;
+    final bool isLastCol = colIndex == matrix[rowIndex].length - 1;
+
+    return BorderRadius.only(
+      topLeft: (isFirstRow && isFirstCol)
+          ? const Radius.circular(AppDimensions.smallPadding)
+          : Radius.zero,
+      topRight: (isFirstRow && isLastCol)
+          ? const Radius.circular(AppDimensions.smallPadding)
+          : Radius.zero,
+      bottomLeft: (isLastRow && isFirstCol)
+          ? const Radius.circular(AppDimensions.smallPadding)
+          : Radius.zero,
+      bottomRight: (isLastRow && isLastCol)
+          ? const Radius.circular(AppDimensions.smallPadding)
+          : Radius.zero,
+    );
   }
 
   @override
@@ -31,29 +89,33 @@ class MatrixWidget extends StatelessWidget {
       defaultColumnWidth: const IntrinsicColumnWidth(),
       children: List.generate(matrix.length, (r) {
         return TableRow(
-          decoration: BoxDecoration(
-            color: (r % 2 == 0)
-                ? AppColors.primaryDark.withOpacity(0.1)
-                : AppColors.secondaryDark.withOpacity(0.1),
-          ),
           children: List.generate(matrix[r].length, (c) {
             final isHigh = _isHighlighted(r + 1, c + 1);
-            // Используем AnimatedContainer для интерактивного изменения цвета ячейки
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeInOut,
-              padding: EdgeInsets.symmetric(
-                vertical: AppDimensions.smallPadding,
-                horizontal: AppDimensions.mediumPadding,
-              ),
+            final cellBorderRadius = _getCellBorderRadius(r, c);
+
+            return Container(
               decoration: BoxDecoration(
-                color: isHigh ? AppColors.yellowHighlight : Colors.transparent,
+                color: (r % 2 == 0)
+                    ? AppColors.primaryDark.withOpacity(0.1)
+                    : AppColors.secondaryDark.withOpacity(0.1),
+                borderRadius: cellBorderRadius,
               ),
-              child: Center(
-                child: Text(
-                  '${matrix[r][c]}',
-                  style: AppTextStyles.monospace(
-                    fontSize: 14,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeInOut,
+                padding: EdgeInsets.symmetric(
+                  vertical: AppDimensions.smallPadding,
+                  horizontal: AppDimensions.mediumPadding,
+                ),
+                decoration: BoxDecoration(
+                  color:
+                      isHigh ? AppColors.yellowHighlight : Colors.transparent,
+                  borderRadius: cellBorderRadius,
+                ),
+                child: Center(
+                  child: Text(
+                    '${matrix[r][c]}',
+                    style: AppTextStyles.monospace(fontSize: 14),
                   ),
                 ),
               ),

@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:collection/collection.dart'; 
 
 import 'matrix_widget.dart';
+import '../../data/services/highlight_isolate.dart';
 import '../../data/models/algorithm_model.dart';
 import '../../core/constants/index.dart';
+
+typedef HighlightResult = Map<int, List<Highlight>>;
 
 class MatrixDisplayWidget extends StatefulWidget {
   final List<MatrixList> matrices;
@@ -24,6 +28,11 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
   late final List<List<PathElement>> _allPaths;
   late final List<Map<String, dynamic>> _allPatterns;
 
+  // Храним текущие и предыдущие подсветки для анимации
+  HighlightResult? _currentHighlights;
+  HighlightResult? _previousHighlights;
+  Future<HighlightResult>? _highlightsFuture;
+
   @override
   void initState() {
     super.initState();
@@ -36,9 +45,55 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
         _allPatterns.add(pattern.pattern);
       }
     }
+    _computeHighlights();
   }
 
-  // Функция для составления текста описания паттерна (преобразуем результат алгоритма в понятный для пользователя формат)
+  // Конвертация старых данных в новую типизацию
+  HighlightResult _convertToNewFormat(Map<int, List<List<int>>> oldResult) {
+    final newResult = <int, List<Highlight>>{};
+
+    for (final entry in oldResult.entries) {
+      final highlights = <Highlight>[];
+
+      for (final coords in entry.value) {
+        final row = coords[0];
+        final col = coords[1];
+
+        if (row != -1 && col != -1) {
+          highlights.add(CellHighlight(row, col));
+        } else if (row != -1) {
+          highlights.add(RowHighlight(row));
+        } else if (col != -1) {
+          highlights.add(ColHighlight(col));
+        }
+      }
+
+      newResult[entry.key] = highlights;
+    }
+
+    return newResult;
+  }
+
+  void _computeHighlights() {
+    setState(() {
+      _previousHighlights = _currentHighlights;
+      _highlightsFuture = computeHighlightsIsolate(
+        matrices: widget.matrices,
+        path: _allPaths[currentPathIndex],
+      ).then((oldResult) => _convertToNewFormat(oldResult));
+
+      _highlightsFuture!.then((result) {
+        if (mounted) {
+          setState(() {
+            _currentHighlights = result;
+            _previousHighlights = null;
+          });
+        }
+      });
+    });
+  }
+
+  // Функция для составления текста описания паттерна
   String _describePatternWithResult(
     Map<String, dynamic> pattern,
     AlgorithmResponse response,
@@ -46,7 +101,7 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
   ) {
     for (final result in response.algorithmResults) {
       for (final p in result.patterns) {
-        if (_isMapsEqual(p.pattern, pattern)) {
+        if (const DeepCollectionEquality().equals(p.pattern, pattern)) {
           final conditions = pattern.entries
               .map((e) => '${e.key} = ${e.value}')
               .join(', ')
@@ -58,93 +113,30 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
     return loc.emptyPattern;
   }
 
-  bool _isMapsEqual(Map a, Map b) {
-    if (a.length != b.length) return false;
-    for (final key in a.keys) {
-      if (!b.containsKey(key) || a[key] != b[key]) return false;
-    }
-    return true;
-  }
-
-
-  // Функция для преобразования номера матрицы в ее индекс для соответсвующего отображения на клиенте
+  // Функция для преобразования номера матрицы в ее индекс
   String _subscript(int number) {
     const sub = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
     return number.toString().split('').map((d) => sub[int.parse(d)]).join();
   }
 
-  // Функция для получения ячеек матрицы, которые должно быть выделены цветом как часть паттерна
-  Map<int, MatrixList> _computeHighlights({
-    required List<MatrixList> matrices,
-    required List<PathElement> path,
-  }) {
-    final result = <int, MatrixList>{};
-    final userDefined = path.map((e) => e.m).whereType<int>().toSet();
-    final queue = List<PathElement>.from(path);
-
-    while (queue.isNotEmpty) {
-      final p = queue.removeAt(0);
-      final m = p.m;
-      final value = p.value;
-      final row = p.row;
-      final col = p.col;
-
-      if (m != null) {
-        if (row != null && col != null) {
-          result.putIfAbsent(m, () => []).add([row, col]);
-        } else if (row != null) {
-          result.putIfAbsent(m, () => []).add([row, -1]);
-        } else if (col != null) {
-          result.putIfAbsent(m, () => []).add([-1, col]);
-        }
-
-        if (m + 1 < matrices.length && !userDefined.contains(m + 1)) {
-          result.putIfAbsent(m + 1, () => []).add([value, -1]);
-        }
-
-        for (int depth = m + 2; depth < matrices.length; depth++) {
-          if (userDefined.contains(depth)) break;
-          final prev = result[depth - 1];
-          if (prev == null) break;
-
-          final added = <List<int>>[];
-          for (final hi in prev) {
-            final r = hi[0] - 1;
-            if (hi[1] == -1 && r >= 0 && r < matrices[depth - 1].length) {
-              for (final v in matrices[depth - 1][r]) {
-                added.add([v, -1]);
-              }
-            }
-          }
-
-          if (added.isEmpty) break;
-          result.putIfAbsent(depth, () => []).addAll(added);
-        }
-      }
-    }
-    return result;
-  }
-
   Widget _buildMatrixColumn({
     required int index,
     required MatrixList matrix,
-    required MatrixList highlightedCells,
+    required List<Highlight> highlights,
   }) {
     final isFirst = index == 0;
 
     final matrixWidget = MatrixWidget(
       matrix: matrix,
-      highlightedCells: highlightedCells,
+      highlights: highlights,
     );
 
-    // Получаем индекс под матрицей
     final labelBelow = Text(
       'x${_subscript(index + 2)}',
       style: AppTextStyles.monospace(fontSize: 16),
     );
 
     if (isFirst) {
-      // Индекс первого признака в свертке указывается слева от матрицы, а не снизу как у остальных
       return Padding(
         padding: const EdgeInsets.only(bottom: AppDimensions.smallPadding),
         child: Row(
@@ -184,7 +176,6 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
 
-    // В случае отстутствия паттернов выводим соответсвтующий текст
     if (_allPaths.isEmpty) {
       return Center(
         child: Text(
@@ -200,14 +191,8 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
       loc,
     );
 
-    final highlightsMap = _computeHighlights(
-      matrices: widget.matrices,
-      path: _allPaths[currentPathIndex],
-    );
-
     return Column(
       children: [
-        // Навигация по паттернам
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -218,7 +203,10 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
                     horizontal: AppDimensions.mediumPadding),
               ),
               onPressed: currentPathIndex > 0
-                  ? () => setState(() => currentPathIndex--)
+                  ? () {
+                      setState(() => currentPathIndex--);
+                      _computeHighlights();
+                    }
                   : null,
               child: Text(
                 loc.back,
@@ -238,7 +226,10 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
                     horizontal: AppDimensions.mediumPadding),
               ),
               onPressed: currentPathIndex < _allPaths.length - 1
-                  ? () => setState(() => currentPathIndex++)
+                  ? () {
+                      setState(() => currentPathIndex++);
+                      _computeHighlights();
+                    }
                   : null,
               child: Text(
                 loc.next,
@@ -254,25 +245,66 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
           textAlign: TextAlign.center,
         ),
         SizedBox(height: AppDimensions.largePadding),
-        // Отображение матриц
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: List.generate(widget.matrices.length, (i) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppDimensions.mediumPadding),
-                child: _buildMatrixColumn(
-                  index: i,
-                  matrix: widget.matrices[i],
-                  highlightedCells: highlightsMap[i] ?? [],
-                ),
-              );
-            }),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: _MatrixDisplaySection(
+            key: ValueKey<int>(currentPathIndex),
+            matrices: widget.matrices,
+            currentHighlights: _currentHighlights,
+            previousHighlights: _previousHighlights,
+            buildMatrixColumn: _buildMatrixColumn,
+            isLoading: _currentHighlights == null,
           ),
         ),
       ],
+    );
+  }
+}
+
+class _MatrixDisplaySection extends StatelessWidget {
+  final List<MatrixList> matrices;
+  final HighlightResult? currentHighlights;
+  final HighlightResult? previousHighlights;
+  final Widget Function({
+    required int index,
+    required MatrixList matrix,
+    required List<Highlight> highlights,
+  }) buildMatrixColumn;
+  final bool isLoading;
+
+  const _MatrixDisplaySection({
+    required Key key,
+    required this.matrices,
+    required this.currentHighlights,
+    required this.previousHighlights,
+    required this.buildMatrixColumn,
+    required this.isLoading,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final highlightsToUse = currentHighlights ?? previousHighlights ?? {};
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: List.generate(matrices.length, (i) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppDimensions.mediumPadding),
+            child: buildMatrixColumn(
+              index: i,
+              matrix: matrices[i],
+              highlights: highlightsToUse[i] ?? [],
+            ),
+          );
+        }),
+      ),
     );
   }
 }
