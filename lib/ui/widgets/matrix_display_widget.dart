@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-import 'package:collection/collection.dart'; 
+import 'package:collection/collection.dart';
 
 import 'matrix_widget.dart';
 import '../../data/services/highlight_isolate.dart';
@@ -27,6 +27,7 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
   int currentPathIndex = 0;
   late final List<List<PathElement>> _allPaths;
   late final List<Map<String, dynamic>> _allPatterns;
+  final Map<int, HighlightResult> _highlightsCache = {}; //кэшируем паттерны
 
   // Храним текущие и предыдущие подсветки для анимации
   HighlightResult? _currentHighlights;
@@ -75,6 +76,15 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
   }
 
   void _computeHighlights() {
+    // Проверяем кэш перед запуском изолята
+    if (_highlightsCache.containsKey(currentPathIndex)) {
+      setState(() {
+        _previousHighlights = _currentHighlights;
+        _currentHighlights = _highlightsCache[currentPathIndex];
+      });
+      return;
+    }
+
     setState(() {
       _previousHighlights = _currentHighlights;
       _highlightsFuture = computeHighlightsIsolate(
@@ -86,6 +96,7 @@ class _MatrixDisplayWidgetState extends State<MatrixDisplayWidget> {
         if (mounted) {
           setState(() {
             _currentHighlights = result;
+            _highlightsCache[currentPathIndex] = result; // Сохраняем в кэш
             _previousHighlights = null;
           });
         }
